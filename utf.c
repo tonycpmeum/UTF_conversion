@@ -62,8 +62,8 @@ int pack_charset_data(char *charset) {
    else if (i == 1) { return UTF16_BE; }
    else if (i == 2) { return UTF16_LE; }
    
-   else { // user input wont have error
-      printf("Source file format not supported.\n");
+   else {
+      printf("File format not supported.\n");
       exit(1);
    } 
 }
