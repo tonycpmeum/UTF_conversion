@@ -1,11 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
-#include <unistd.h>
-#include <wait.h>
 #include <stdint.h>
 #include <string.h>
-
-#define CHARSET_BUF 128
 
 #define UTF16_BE 0b11
 #define UTF16_LE 0b10
@@ -23,18 +19,6 @@ struct {
    int format;
 } dst;
 
-void grep_charset(char charset[]) {
-   int i = 0; // index of char '='
-   while (charset[i] != '=') { i++; }
-
-   int j = 0;
-   for (++i; charset[i] != '\0' && charset[i] != '\n'; i++, j++) {
-      charset[j] = charset[i];
-   }
-   charset[j++] = '\0';
-   memset(charset + j, 0, CHARSET_BUF - j);
-}
-
 size_t get_file_size(FILE *file) {
    fseek(file, 0, SEEK_END);
    size_t file_size_byte = ftell(file);
@@ -46,26 +30,6 @@ void swap_endian_2b(uint16_t *code_unit) {
    uint8_t LObyte = *code_unit;
    *code_unit = (*code_unit >> 8) & 0xff;
    *code_unit |= LObyte << 8;
-}
-
-int pack_charset_data(char *charset) {
-   char *charset_list[] = {"utf-8", "utf-16be", "utf-16le"};
-   int i = 0;
-   while (i < 3) {
-      if (strcmp(charset, charset_list[i]) == 0) { 
-         break; 
-      }
-      i++;
-   }
-
-   if (i == 0) { return UTF8; }
-   else if (i == 1) { return UTF16_BE; }
-   else if (i == 2) { return UTF16_LE; }
-   
-   else {
-      printf("File format not supported.\n");
-      exit(1);
-   } 
 }
 
 void utf8_utf16(char *buffer) {
@@ -207,9 +171,15 @@ void utf16_utf8(char *buffer) {
    free(uint8buf);
 }
 
-void conversion(char *charset, char *buffer) {
-   src.format = pack_charset_data(charset);
-   dst.format = pack_charset_data("utf-8");
+void conversion(char *buffer) {
+   if ((uint8_t)buffer[0] == 0xFF && (uint8_t)buffer[1] == 0xFE) 
+      { src.format = UTF16_LE; }
+   else if ((uint8_t)buffer[0] == 0xFE && (uint8_t)buffer[1] == 0xFF) 
+      { src.format = UTF16_BE; }
+   else 
+      { src.format = UTF8; } 
+
+   dst.format = UTF8;
 
    if (src.format == UTF8 && (dst.format == UTF16_LE || dst.format == UTF16_BE)) {
       utf8_utf16(buffer);
@@ -229,28 +199,6 @@ int main() {
    dst.file_path = "./testt";
 
    char* buffer;
-   char charset[CHARSET_BUF];
-
-   int fd[2];
-   if (pipe(fd) == -1) {
-      perror("Pipe error:");
-      return 1;
-   }
-
-   if (fork() == 0) {
-      close(fd[0]);
-      dup2(fd[1], STDOUT_FILENO);
-      close(fd[1]);
-      char *command[] = {"file", "-i", src.file_path, NULL};
-      execvp("file", command);
-   } else {
-      close(fd[1]);
-      int nbytes = read(fd[0], charset, sizeof(charset));
-      close(fd[0]);
-      wait(NULL);
-   }
-
-   grep_charset(charset);
 
    FILE *file = fopen(src.file_path, "r+");
    if (file == NULL) {
@@ -263,7 +211,7 @@ int main() {
    fread(buffer, src.file_size, 1, file);
    fclose(file);
 
-   conversion(charset, buffer);
+   conversion(buffer);
    free(buffer);
 
    return 0;
